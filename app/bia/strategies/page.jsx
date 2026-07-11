@@ -1,8 +1,9 @@
 "use client"
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import BiaShell, { badgeToneForStatus } from '@/components/bia/BiaShell'
-import { getProcessById, recoveryStrategies as initialStrategies, strategyTypes } from '@/lib/bia-data'
+import { strategyTypes } from '@/lib/bia-data'
+import { biaApi } from '@/lib/bia-api'
 
 const emptyForm = { name: '', type: strategyTypes[0], status: 'Planifié', processId: '' }
 
@@ -17,15 +18,18 @@ const typeIcons = {
 }
 
 export default function StrategiesPage() {
-  const [strategies, setStrategies] = useState(initialStrategies)
+  const [strategies, setStrategies] = useState([])
+  const [processes, setProcesses] = useState([])
+  const [error, setError] = useState('')
   const [isModalOpen, setModalOpen] = useState(false)
   const [form, setForm] = useState(emptyForm)
 
-  function handleSubmit(event) {
+  useEffect(() => { Promise.all([biaApi('/strategies'), biaApi('/processes')]).then(([items, processRows]) => { setStrategies(items); setProcesses(processRows); setForm((v) => ({ ...v, processId: processRows[0]?.id || '' })) }).catch((e) => setError(e.message)) }, [])
+  const getProcessById = (id) => processes.find((item) => item.id === id)
+
+  async function handleSubmit(event) {
     event.preventDefault()
-    setStrategies((current) => [...current, { ...form, id: `strat-${Date.now()}` }])
-    setModalOpen(false)
-    setForm(emptyForm)
+    try { const saved = await biaApi('/strategies', { method: 'POST', body: JSON.stringify(form) }); setStrategies((current) => [...current, saved]); setModalOpen(false); setForm({ ...emptyForm, processId: processes[0]?.id || '' }) } catch (e) { setError(e.message) }
   }
 
   return (
@@ -44,6 +48,7 @@ export default function StrategiesPage() {
         </button>
       )}
     >
+      {error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
         {strategyTypes.map((type) => {
           const items = strategies.filter((strategy) => strategy.type === type)
@@ -94,6 +99,12 @@ export default function StrategiesPage() {
                   required
                   value={form.name}
                 />
+              </label>
+              <label className="flex flex-col gap-1 text-[13px] font-semibold text-[#444651]">
+                Processus
+                <select className="rounded-lg border border-[#c5c5d3] px-3 py-2 text-sm" onChange={(event) => setForm({ ...form, processId: event.target.value })} required value={form.processId}>
+                  {processes.map((process) => <option key={process.id} value={process.id}>{process.name}</option>)}
+                </select>
               </label>
               <label className="flex flex-col gap-1 text-[13px] font-semibold text-[#444651]">
                 Type

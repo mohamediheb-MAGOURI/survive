@@ -18,7 +18,9 @@ function getDatabaseUrl(): string {
     throw new Error("DATABASE_URL is not defined in .env");
   }
 
-  return match[1].trim().replace(/^['\"]|['\"]$/g, "");
+  const url = match[1].trim().replace(/^['\"]|['\"]$/g, "");
+  process.env.DATABASE_URL = url;
+  return url;
 }
 
 export default defineConfig({

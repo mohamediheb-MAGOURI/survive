@@ -1,17 +1,20 @@
 "use client"
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import BiaShell, { badgeToneForStatus } from '@/components/bia/BiaShell'
-import { factories as initialFactories } from '@/lib/bia-data'
+import { biaApi } from '@/lib/bia-api'
 
 const emptyForm = { name: '', code: '', location: '', description: '', manager: '', status: 'Actif' }
 
 export default function FactoriesPage() {
-  const [factories, setFactories] = useState(initialFactories)
+  const [factories, setFactories] = useState([])
+  const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [isModalOpen, setModalOpen] = useState(false)
   const [editingId, setEditingId] = useState(null)
   const [form, setForm] = useState(emptyForm)
+
+  useEffect(() => { biaApi('/factories').then(setFactories).catch((e) => setError(e.message)) }, [])
 
   const filtered = factories.filter((factory) =>
     `${factory.name} ${factory.code} ${factory.location}`.toLowerCase().includes(search.toLowerCase()),
@@ -29,19 +32,17 @@ export default function FactoriesPage() {
     setModalOpen(true)
   }
 
-  function handleDelete(id) {
-    setFactories((current) => current.filter((factory) => factory.id !== id))
+  async function handleDelete(id) {
+    try { await biaApi(`/factories/${id}`, { method: 'DELETE' }); setFactories((current) => current.filter((factory) => factory.id !== id)) } catch (e) { setError(e.message) }
   }
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault()
-    if (editingId) {
-      setFactories((current) => current.map((factory) => (factory.id === editingId ? { ...form, id: editingId } : factory)))
-    } else {
-      const id = form.code ? form.code.toLowerCase().replace(/\s+/g, '-') : `usine-${Date.now()}`
-      setFactories((current) => [...current, { ...form, id }])
-    }
-    setModalOpen(false)
+    try {
+      const saved = await biaApi(editingId ? `/factories/${editingId}` : '/factories', { method: editingId ? 'PATCH' : 'POST', body: JSON.stringify(form) })
+      setFactories((current) => editingId ? current.map((item) => item.id === editingId ? saved : item) : [...current, saved])
+      setModalOpen(false); setError('')
+    } catch (e) { setError(e.message) }
   }
 
   return (
@@ -60,6 +61,7 @@ export default function FactoriesPage() {
         </button>
       )}
     >
+      {error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
       <div className="flex items-center gap-3">
         <div className="group relative w-full max-w-sm">
           <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[#757682]">search</span>

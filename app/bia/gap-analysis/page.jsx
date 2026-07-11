@@ -1,8 +1,9 @@
 "use client"
 
 import Link from 'next/link'
+import { useEffect, useState } from 'react'
 import BiaShell, { badgeToneForCriticality } from '@/components/bia/BiaShell'
-import { gapAnalyses, getFactoryById, getProcessById } from '@/lib/bia-data'
+import { biaApi } from '@/lib/bia-api'
 
 function gapTone(gap) {
   if (gap >= 30) return 'Critique'
@@ -12,12 +13,20 @@ function gapTone(gap) {
 }
 
 export default function GapAnalysisPage() {
+  const [gapAnalyses, setGapAnalyses] = useState([])
+  const [processes, setProcesses] = useState([])
+  const [factories, setFactories] = useState([])
+  const [error, setError] = useState('')
+  useEffect(() => { Promise.all([biaApi('/gaps'), biaApi('/processes'), biaApi('/factories')]).then(([gaps, processRows, factoryRows]) => { setGapAnalyses(gaps); setProcesses(processRows); setFactories(factoryRows) }).catch((e) => setError(e.message)) }, [])
+  const getProcessById = (id) => processes.find((item) => item.id === id)
+  const getFactoryById = (id) => factories.find((item) => item.id === id)
   return (
     <BiaShell
       active="gap"
       title="Gap Analysis"
       subtitle="Comparaison entre la situation actuelle et le niveau de résilience attendu."
     >
+      {error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
       <div className="space-y-6">
         {gapAnalyses.map((gap) => {
           const process = getProcessById(gap.processId)
@@ -36,7 +45,7 @@ export default function GapAnalysisPage() {
                   <span className={`rounded-full px-3 py-1 text-[12px] font-bold ${badgeToneForCriticality(tone)}`}>
                     Écart : {delta} pts
                   </span>
-                  <Link className="text-[13px] font-semibold text-[#00236f] hover:underline" href={`/bia/${gap.id.replace('gap', 'bia')}`}>
+                  <Link className="text-[13px] font-semibold text-[#00236f] hover:underline" href={`/bia/new?processId=${gap.processId}`}>
                     Voir le BIA
                   </Link>
                 </div>

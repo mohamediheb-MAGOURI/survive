@@ -1,16 +1,15 @@
 "use client"
 
-import Link from 'next/link'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import BiaShell, { badgeToneForCriticality } from '@/components/bia/BiaShell'
 import {
   getCriticality,
-  getFactoryById,
   impactCategories,
   interruptionPeriods,
-  processes,
   resourceCategories,
 } from '@/lib/bia-data'
+import { biaApi } from '@/lib/bia-api'
 
 const steps = [
   { key: 'general', label: 'Informations générales', icon: 'assignment' },
@@ -36,8 +35,13 @@ function emptyImpactMatrix() {
 }
 
 export default function NewBiaPage() {
+  const router = useRouter()
+  const [processes, setProcesses] = useState([])
+  const [factories, setFactories] = useState([])
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
   const [stepIndex, setStepIndex] = useState(0)
-  const [processId, setProcessId] = useState(processes[0]?.id ?? '')
+  const [processId, setProcessId] = useState('')
   const [objective, setObjective] = useState('')
   const [owner, setOwner] = useState('')
   const [version, setVersion] = useState('1.0')
@@ -64,8 +68,10 @@ export default function NewBiaPage() {
 
   const [recommendations, setRecommendations] = useState([{ text: '', priority: 'Moyenne', owner: '' }])
 
+  useEffect(() => { Promise.all([biaApi('/processes'), biaApi('/factories')]).then(([processRows, factoryRows]) => { setProcesses(processRows); setFactories(factoryRows); setProcessId((value) => value || processRows[0]?.id || '') }).catch((e) => setError(e.message)) }, [])
+
   const selectedProcess = processes.find((process) => process.id === processId)
-  const selectedFactory = selectedProcess ? getFactoryById(selectedProcess.factoryId) : null
+  const selectedFactory = selectedProcess ? factories.find((factory) => factory.id === selectedProcess.factoryId) : null
 
   const globalScore = useMemo(() => {
     const values = Object.values(impactMatrix).flatMap((periodScores) => Object.values(periodScores))
@@ -106,6 +112,17 @@ export default function NewBiaPage() {
     setStepIndex((current) => Math.max(current - 1, 0))
   }
 
+  async function saveBia() {
+    if (!selectedProcess) { setError('Sélectionnez un processus'); return }
+    const impactScores = Object.fromEntries(impactCategories.map((category) => {
+      const scores = interruptionPeriods.map((period) => Number(impactMatrix[period][category.key] || 0))
+      return [category.key, Math.round(scores.reduce((sum, value) => sum + value, 0) / scores.length)]
+    }))
+    const splitLines = (value) => value.split('\n').map((item) => item.trim()).filter(Boolean)
+    const payload = { processId, processName: selectedProcess.name, factoryId: selectedProcess.factoryId, objective, owner, version, analysisDate, analyst, globalScore, impactScores, impactMatrix, resources: selectedResources, dependencies: Object.fromEntries(Object.entries(dependencies).map(([key, value]) => [key, splitLines(value)])), minimalActivities, minimalLevel, rto, rpo, mtpd, mbco, consequences, existingMeasures, recommendations: recommendations.filter((item) => item.text.trim()) }
+    try { setSaving(true); const saved = await biaApi('/reports', { method: 'POST', body: JSON.stringify(payload) }); router.push(`/bia/${saved.id}`) } catch (e) { setError(e.message); setSaving(false) }
+  }
+
   const currentStep = steps[stepIndex]
 
   return (
@@ -114,6 +131,7 @@ export default function NewBiaPage() {
       title="Nouvelle analyse BIA"
       subtitle="Complétez les 8 sections pour générer une analyse d'impact métier."
     >
+      {error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[240px_1fr]">
         <nav className="space-y-1 rounded-xl border border-[#c5c5d3] bg-white p-4 shadow-sm lg:sticky lg:top-32 lg:h-fit">
           {steps.map((step, index) => (
@@ -450,12 +468,14 @@ export default function NewBiaPage() {
                 Suivant
               </button>
             ) : (
-              <Link
+              <button
                 className="rounded-lg bg-[#006b5f] px-6 py-2.5 text-[14px] font-bold text-white shadow-sm hover:shadow-md active:scale-95"
-                href="/bia"
+                disabled={saving}
+                onClick={saveBia}
+                type="button"
               >
-                Enregistrer l'analyse BIA
-              </Link>
+                {saving ? 'Enregistrement…' : "Enregistrer l'analyse BIA"}
+              </button>
             )}
           </div>
         </div>

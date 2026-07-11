@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { PolarAngleAxis, PolarGrid, Radar, RadarChart, ResponsiveContainer } from 'recharts'
 import BiaShell, { badgeToneForCriticality, badgeToneForStatus } from '@/components/bia/BiaShell'
-import { getCriticality, getFactoryById, impactCategories, resourceCategories } from '@/lib/bia-data'
+import { getCriticality, impactCategories, resourceCategories } from '@/lib/bia-data'
 
 const tabs = [
   { key: 'synthese', label: 'Synthèse' },
@@ -30,12 +30,12 @@ function exportReport(format, bia) {
 
 export default function BiaDetailView({ bia, process }) {
   const [activeTab, setActiveTab] = useState('synthese')
-  const factory = process ? getFactoryById(process.factoryId) : null
+  const factory = process?.factory || null
   const criticality = getCriticality(bia.globalScore)
 
   const radarData = impactCategories.map((category) => ({
     category: category.label,
-    score: bia.impactScores[category.key] ?? 0,
+    score: bia.impactScores?.[category.key] ?? 0,
   }))
 
   return (

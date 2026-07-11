@@ -1,20 +1,18 @@
 "use client"
 
 import Link from 'next/link'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import BiaShell, { badgeToneForCriticality, badgeToneForStatus } from '@/components/bia/BiaShell'
 import {
   criticalityLevels,
   departments,
-  factories,
-  getFactoryById,
   processCategories,
-  processes as initialProcesses,
 } from '@/lib/bia-data'
+import { biaApi } from '@/lib/bia-api'
 
 const emptyForm = {
   name: '',
-  factoryId: factories[0]?.id ?? '',
+  factoryId: '',
   department: departments[0],
   owner: '',
   category: processCategories[0],
@@ -24,13 +22,22 @@ const emptyForm = {
 }
 
 export default function ProcessesPage() {
-  const [processes, setProcesses] = useState(initialProcesses)
+  const [processes, setProcesses] = useState([])
+  const [factories, setFactories] = useState([])
+  const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [factoryFilter, setFactoryFilter] = useState('all')
   const [criticalityFilter, setCriticalityFilter] = useState('all')
   const [isModalOpen, setModalOpen] = useState(false)
   const [editingId, setEditingId] = useState(null)
   const [form, setForm] = useState(emptyForm)
+  const getFactoryById = (id) => factories.find((factory) => factory.id === id)
+
+  useEffect(() => {
+    Promise.all([biaApi('/processes'), biaApi('/factories')]).then(([processRows, factoryRows]) => {
+      setProcesses(processRows); setFactories(factoryRows); setForm((value) => ({ ...value, factoryId: value.factoryId || factoryRows[0]?.id || '' }))
+    }).catch((e) => setError(e.message))
+  }, [])
 
   const filtered = useMemo(() => {
     return processes.filter((process) => {
@@ -53,22 +60,18 @@ export default function ProcessesPage() {
     setModalOpen(true)
   }
 
-  function archiveProcess(id) {
-    setProcesses((current) => current.map((process) => (process.id === id ? { ...process, status: 'Archivé' } : process)))
+  async function archiveProcess(id) {
+    const current = processes.find((item) => item.id === id)
+    try { const saved = await biaApi(`/processes/${id}`, { method: 'PATCH', body: JSON.stringify({ ...current, status: 'Archivé' }) }); setProcesses((rows) => rows.map((item) => item.id === id ? saved : item)) } catch (e) { setError(e.message) }
   }
 
-  function deleteProcess(id) {
-    setProcesses((current) => current.map((process) => (process.id === id ? { ...process, status: 'Supprimé' } : process)))
+  async function deleteProcess(id) {
+    try { await biaApi(`/processes/${id}`, { method: 'DELETE' }); setProcesses((rows) => rows.filter((item) => item.id !== id)) } catch (e) { setError(e.message) }
   }
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault()
-    if (editingId) {
-      setProcesses((current) => current.map((process) => (process.id === editingId ? { ...form, id: editingId } : process)))
-    } else {
-      setProcesses((current) => [...current, { ...form, id: `proc-${Date.now()}` }])
-    }
-    setModalOpen(false)
+    try { const saved = await biaApi(editingId ? `/processes/${editingId}` : '/processes', { method: editingId ? 'PATCH' : 'POST', body: JSON.stringify(form) }); setProcesses((rows) => editingId ? rows.map((item) => item.id === editingId ? saved : item) : [...rows, saved]); setModalOpen(false) } catch (e) { setError(e.message) }
   }
 
   return (
@@ -87,6 +90,7 @@ export default function ProcessesPage() {
         </button>
       )}
     >
+      {error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
       <div className="flex flex-wrap items-center gap-3">
         <div className="group relative w-full max-w-sm">
           <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[#757682]">search</span>
