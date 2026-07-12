@@ -1,15 +1,75 @@
 "use client"
 
 import Link from 'next/link'
+import { useEffect, useMemo, useState } from 'react'
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import BiaShell, { badgeToneForCriticality, badgeToneForStatus } from '@/components/bia/BiaShell'
-import { biaReports, computeDashboardMetrics, getCriticality, getFactoryById, getProcessById } from '@/lib/bia-data'
+import { biaApi } from '@/lib/bia-api'
 
+const criticalityLevels = ['Critique', 'Majeur', 'Modéré', 'Mineur']
 const criticalityColors = {
   Critique: '#ba1a1a',
   Majeur: '#c98a00',
   Modéré: '#00236f',
   Mineur: '#006b5f',
+}
+
+function getCriticality(score) {
+  if (score >= 80) return 'Critique'
+  if (score >= 60) return 'Majeur'
+  if (score >= 35) return 'Modéré'
+  return 'Mineur'
+}
+
+function getProcessById(processes, id) {
+  return processes.find((process) => process.id === id)
+}
+
+function getFactoryById(factories, id) {
+  return factories.find((factory) => factory.id === id)
+}
+
+function formatMonthLabel(dateString) {
+  const date = new Date(dateString)
+  if (Number.isNaN(date.getTime())) return dateString
+  return date.toLocaleString('fr-FR', { month: 'short', year: 'numeric' })
+}
+
+function computeDashboardMetrics(reports, processes, factories) {
+  const totalBia = reports.length
+  const criticalProcesses = reports.filter((bia) => getCriticality(bia.globalScore) === 'Critique').length
+  const factoriesCovered = new Set(
+    reports
+      .map((bia) => getProcessById(processes, bia.processId)?.factoryId)
+      .filter(Boolean),
+  ).size
+  const completed = reports.filter((bia) => bia.status === 'Validé').length
+  const completionRate = totalBia ? Math.round((completed / totalBia) * 100) : 0
+
+  const distribution = criticalityLevels.map((level) => ({
+    level,
+    count: reports.filter((bia) => getCriticality(bia.globalScore) === level).length,
+  }))
+
+  const evolutionMap = reports.reduce((map, bia) => {
+    if (!bia.date) return map
+    const monthKey = new Date(bia.date).toISOString().slice(0, 7)
+    if (!map[monthKey]) {
+      map[monthKey] = { monthKey, totalScore: 0, count: 0, sampleDate: bia.date }
+    }
+    map[monthKey].totalScore += Number(bia.globalScore || 0)
+    map[monthKey].count += 1
+    return map
+  }, {})
+
+  const evolution = Object.values(evolutionMap)
+    .sort((a, b) => new Date(a.monthKey) - new Date(b.monthKey))
+    .map((entry) => ({
+      month: formatMonthLabel(entry.sampleDate),
+      score: Math.round(entry.totalScore / entry.count) || 0,
+    }))
+
+  return { totalBia, criticalProcesses, factoriesCovered, completionRate, distribution, evolution }
 }
 
 function KpiCard({ icon, label, value, tone }) {
@@ -27,8 +87,25 @@ function KpiCard({ icon, label, value, tone }) {
 }
 
 export default function BiaDashboardPage() {
-  const metrics = computeDashboardMetrics()
-  const recentBia = [...biaReports].sort((a, b) => new Date(b.date) - new Date(a.date))
+  const [reports, setReports] = useState([])
+  const [processes, setProcesses] = useState([])
+  const [factories, setFactories] = useState([])
+  const [error, setError] = useState('')
+  const [isLoading, setIsLoading] = useState(true)
+
+  useEffect(() => {
+    Promise.all([biaApi('/reports'), biaApi('/processes'), biaApi('/factories')])
+      .then(([reportsData, processesData, factoriesData]) => {
+        setReports(reportsData)
+        setProcesses(processesData)
+        setFactories(factoriesData)
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => setIsLoading(false))
+  }, [])
+
+  const metrics = computeDashboardMetrics(reports, processes, factories)
+  const recentBia = [...reports].sort((a, b) => new Date(b.date) - new Date(a.date))
 
   return (
     <BiaShell
@@ -45,12 +122,18 @@ export default function BiaDashboardPage() {
         </Link>
       )}
     >
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-        <KpiCard icon="fact_check" label="Analyses BIA" value={metrics.totalBia} tone="bg-[#00236f]/10 text-[#00236f]" />
-        <KpiCard icon="warning" label="Processus critiques" value={metrics.criticalProcesses} tone="bg-[#ba1a1a]/10 text-[#ba1a1a]" />
-        <KpiCard icon="factory" label="Usines couvertes" value={metrics.factoriesCovered} tone="bg-[#006b5f]/10 text-[#006b5f]" />
-        <KpiCard icon="task_alt" label="Analyses terminées" value={`${metrics.completionRate}%`} tone="bg-[#6df5e1]/40 text-[#006f64]" />
-      </div>
+      {error ? (
+        <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>
+      ) : isLoading ? (
+        <div className="rounded-lg bg-gray-50 p-3 text-sm text-gray-700">Chargement des données BIA...</div>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            <KpiCard icon="fact_check" label="Analyses BIA" value={metrics.totalBia} tone="bg-[#00236f]/10 text-[#00236f]" />
+            <KpiCard icon="warning" label="Processus critiques" value={metrics.criticalProcesses} tone="bg-[#ba1a1a]/10 text-[#ba1a1a]" />
+            <KpiCard icon="factory" label="Usines couvertes" value={metrics.factoriesCovered} tone="bg-[#006b5f]/10 text-[#006b5f]" />
+            <KpiCard icon="task_alt" label="Analyses terminées" value={`${metrics.completionRate}%`} tone="bg-[#6df5e1]/40 text-[#006f64]" />
+          </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="rounded-xl border border-[#c5c5d3] bg-white p-6 shadow-sm lg:col-span-2">
@@ -110,8 +193,8 @@ export default function BiaDashboardPage() {
             </thead>
             <tbody>
               {recentBia.map((bia) => {
-                const process = getProcessById(bia.processId)
-                const factory = process ? getFactoryById(process.factoryId) : null
+                const process = getProcessById(processes, bia.processId)
+                const factory = process ? getFactoryById(factories, process.factoryId) : null
                 const criticality = getCriticality(bia.globalScore)
                 return (
                   <tr key={bia.id} className="border-b border-[#e6e8ea] last:border-0 hover:bg-[#f2f4f6]">
@@ -141,6 +224,8 @@ export default function BiaDashboardPage() {
           </table>
         </div>
       </div>
+        </>
+      )}
     </BiaShell>
   )
 }

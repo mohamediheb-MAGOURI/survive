@@ -50,7 +50,7 @@ export default function ProcessesPage() {
 
   function openCreate() {
     setEditingId(null)
-    setForm(emptyForm)
+    setForm({ ...emptyForm, factoryId: factories[0]?.id || '' })
     setModalOpen(true)
   }
 
@@ -71,7 +71,14 @@ export default function ProcessesPage() {
 
   async function handleSubmit(event) {
     event.preventDefault()
-    try { const saved = await biaApi(editingId ? `/processes/${editingId}` : '/processes', { method: editingId ? 'PATCH' : 'POST', body: JSON.stringify(form) }); setProcesses((rows) => editingId ? rows.map((item) => item.id === editingId ? saved : item) : [...rows, saved]); setModalOpen(false) } catch (e) { setError(e.message) }
+    try {
+      const payload = { ...form, factoryId: form.factoryId || factories[0]?.id || '' }
+      const saved = await biaApi(editingId ? `/processes/${editingId}` : '/processes', { method: editingId ? 'PATCH' : 'POST', body: JSON.stringify(payload) })
+      setProcesses((rows) => editingId ? rows.map((item) => item.id === editingId ? saved : item) : [...rows, saved])
+      setModalOpen(false)
+    } catch (e) {
+      setError(e.message)
+    }
   }
 
   return (
@@ -203,7 +210,9 @@ export default function ProcessesPage() {
                     className="rounded-lg border border-[#c5c5d3] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#00236f]"
                     onChange={(event) => setForm({ ...form, factoryId: event.target.value })}
                     value={form.factoryId}
+                    required
                   >
+                    <option value="" disabled>Sélectionner une usine</option>
                     {factories.map((factory) => (
                       <option key={factory.id} value={factory.id}>{factory.name}</option>
                     ))}
